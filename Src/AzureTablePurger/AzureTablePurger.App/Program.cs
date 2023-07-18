@@ -1,14 +1,12 @@
-﻿using System.Collections.Generic;
-using System.IO;
-using System.Threading;
-using System.Threading.Tasks;
-
-using AzureTablePurger.Services;
-
+﻿using AzureTablePurger.Services;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
-using Microsoft.Extensions.Logging.Console;
+using System;
+using System.Collections.Generic;
+using System.Threading;
+using System.Threading.Tasks;
 
 namespace AzureTablePurger.App
 {
@@ -18,45 +16,37 @@ namespace AzureTablePurger.App
         private const string ConfigKeyTargetTableName = "TargetTableName";
         private const string ConfigKeyPurgeRecordsOlderThanDays = "PurgeRecordsOlderThanDays";
 
-        private static ServiceProvider _serviceProvider;
+        private static IServiceProvider _serviceProvider;
         private static IConfigurationRoot _config;
 
         static async Task Main(string[] args)
         {
-            BuildConfig(args);
-            var serviceCollection = RegisterServices();
-            ConfigureLogging(serviceCollection);
-            _serviceProvider = serviceCollection.BuildServiceProvider();
+            HostApplicationBuilder builder = Host.CreateApplicationBuilder(args);
+            builder.Configuration.AddUserSecrets<Program>();
 
-            await using (_serviceProvider)
-            {
-                var logger = _serviceProvider.GetService<ILogger<Program>>();
-                logger.LogInformation("Starting...");
+            builder.Services.AddConfig(builder.Configuration);
+            builder.Services.AddPurgeServices();
+            builder.Services.ConfigureLogging();
+            BuildConfig(builder, args);
 
-                var tablePurger = _serviceProvider.GetService<ITablePurger>();
+            _serviceProvider = builder.Services.BuildServiceProvider();
 
-                var options = new PurgeEntitiesOptions
-                {
-                    TargetAccountConnectionString = _config[ConfigKeyTargetStorageAccountConnectionString],
-                    TargetTableName = _config[ConfigKeyTargetTableName],
-                    PurgeRecordsOlderThanDays = int.Parse(_config[ConfigKeyPurgeRecordsOlderThanDays])
-                };
+            var logger = _serviceProvider.GetService<ILogger<Program>>();
+            logger.LogInformation("Starting...");
 
-                var cts = new CancellationTokenSource();
+            var tablePurger = _serviceProvider.GetService<ITablePurger>();
 
-                await tablePurger.PurgeEntitiesAsync(options, cts.Token);
+            var cts = new CancellationTokenSource();
+            await tablePurger.PurgeEntitiesAsync(cts.Token);
 
-                logger.LogInformation($"Finished");
-            }
+            logger.LogInformation($"Finished");
+
+            IHost host = builder.Build();
+            host.Run();
         }
 
-        private static void BuildConfig(string[] commandLineArgs)
+        private static void BuildConfig(HostApplicationBuilder builder, string[] commandLineArgs)
         {
-            var configBuilder = new ConfigurationBuilder()
-                .SetBasePath(Directory.GetCurrentDirectory())
-                .AddJsonFile("appsettings.json")
-                .AddUserSecrets<Program>();
-
             // Command line config
             var switchMapping = new Dictionary<string, string>
             {
@@ -65,34 +55,9 @@ namespace AzureTablePurger.App
                 { "-days", ConfigKeyPurgeRecordsOlderThanDays }
             };
 
-            configBuilder.AddCommandLine(commandLineArgs, switchMapping);
-
-            _config = configBuilder.Build();
+            builder.Configuration.AddCommandLine(commandLineArgs, switchMapping);
         }
 
-        private static ServiceCollection RegisterServices()
-        {
-            var serviceCollection = new ServiceCollection();
 
-            // Core logic
-            serviceCollection.AddScoped<ITablePurger, SimpleTablePurger>();
-            serviceCollection.AddScoped<IAzureStorageClientFactory, AzureStorageClientFactory>();
-            serviceCollection.AddScoped<IPartitionKeyHandler, TicksAscendingWithLeadingZeroPartitionKeyHandler>();
-
-            return serviceCollection;
-        }
-
-        private static void ConfigureLogging(ServiceCollection serviceCollection)
-        {
-            serviceCollection.AddLogging(configure =>
-                    configure.AddSimpleConsole(options =>
-                    {
-                        options.SingleLine = true;
-                        options.ColorBehavior = LoggerColorBehavior.Default;
-                        options.IncludeScopes = false;
-                        options.TimestampFormat = "[yyyy-MM-dd HH:mm:ss:fffff tt] ";
-                    }))
-                .Configure<LoggerFilterOptions>(options => options.MinLevel = LogLevel.Debug);
-        }
     }
 }

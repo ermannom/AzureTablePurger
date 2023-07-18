@@ -1,55 +1,56 @@
-﻿using System;
-
-using Microsoft.Azure.Cosmos.Table;
+﻿using Azure.Data.Tables;
 using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Options;
+using System;
 
 namespace AzureTablePurger.Services
 {
-    public class TicksAscendingWithLeadingZeroPartitionKeyHandler : IPartitionKeyHandler
+    public class PartitionKeyHandler : IPartitionKeyHandler
     {
-        private readonly ILogger<TicksAscendingWithLeadingZeroPartitionKeyHandler> _logger;
-
-        public TicksAscendingWithLeadingZeroPartitionKeyHandler(ILogger<TicksAscendingWithLeadingZeroPartitionKeyHandler> logger)
+        private readonly ILogger<PartitionKeyHandler> _logger;
+        private readonly string PartitionKeyFormat;
+        public PartitionKeyHandler(ILogger<PartitionKeyHandler> logger, IOptions<PurgeEntitiesOptions> options)
         {
             _logger = logger;
+            PartitionKeyFormat = options.Value.PartitionKeyFormat;
         }
 
-        public TableQuery GetTableQuery(int purgeEntitiesOlderThanDays)
+        public string GetTableQuery(int purgeEntitiesOlderThanDays)
         {
             var maximumPartitionKeyToDelete = GetMaximumPartitionKeyToDelete(purgeEntitiesOlderThanDays);
 
             return GetTableQuery(null, maximumPartitionKeyToDelete);
         }
 
-        public TableQuery GetTableQuery(string lowerBoundPartitionKey, string upperBoundPartitionKey)
+        public string GetTableQuery(string lowerBoundPartitionKey, string upperBoundPartitionKey)
         {
             if (string.IsNullOrEmpty(lowerBoundPartitionKey))
             {
-                lowerBoundPartitionKey = "0";
+                lowerBoundPartitionKey = "1970-01-01";
             }
 
             var lowerBoundDateTime = ConvertPartitionKeyToDateTime(lowerBoundPartitionKey);
             var upperBoundDateTime = ConvertPartitionKeyToDateTime(upperBoundPartitionKey);
             _logger.LogDebug($"Generating table query: lowerBound partitionKey={lowerBoundPartitionKey} ({lowerBoundDateTime}), upperBound partitionKey={upperBoundPartitionKey} ({upperBoundDateTime})");
 
-            var lowerBound = TableQuery.GenerateFilterCondition("PartitionKey", QueryComparisons.GreaterThanOrEqual, lowerBoundPartitionKey);
-            var upperBound = TableQuery.GenerateFilterCondition("PartitionKey", QueryComparisons.LessThan, upperBoundPartitionKey);
-            var combinedFilter = TableQuery.CombineFilters(lowerBound, TableOperators.And, upperBound);
+            return TableClient.CreateQueryFilter($"PartitionKey ge {lowerBoundPartitionKey} and PartitionKey le {upperBoundPartitionKey}");
 
-            var query = new TableQuery()
-                .Where(combinedFilter)
-                .Select(new[] { "PartitionKey", "RowKey" });
+            //.Select(new[] { "PartitionKey", "RowKey" });
 
-            return query;
         }
 
         public DateTime ConvertPartitionKeyToDateTime(string partitionKey)
         {
             var result = long.TryParse(partitionKey, out long ticks);
 
-            if (!result)
+            if (result)
             {
-                throw new ArgumentException($"PartitionKey is not in the expected format: {partitionKey}", nameof(partitionKey));
+                new DateTime(ticks);
+                //throw new ArgumentException($"PartitionKey is not in the expected format: {partitionKey}", nameof(partitionKey));
+            }
+            else
+            {
+                return DateTime.ParseExact(partitionKey, "yyyy-MM-dd", null);
             }
 
             return new DateTime(ticks);
@@ -57,7 +58,7 @@ namespace AzureTablePurger.Services
 
         public string GetPartitionKeyForDate(DateTime date)
         {
-            return date.Ticks.ToString("D19");
+            return date.ToString("yyyy-MM-dd");
         }
 
         private string GetMaximumPartitionKeyToDelete(int purgeRecordsOlderThanDays)

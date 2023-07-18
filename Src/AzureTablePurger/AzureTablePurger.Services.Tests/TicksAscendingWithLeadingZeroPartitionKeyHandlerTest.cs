@@ -1,20 +1,18 @@
-using System;
-
-using Microsoft.Azure.Cosmos.Table;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.VisualStudio.TestTools.UnitTesting;
+using System;
 
 namespace AzureTablePurger.Services.Tests
 {
     [TestClass]
     public class TicksAscendingWithLeadingZeroPartitionKeyHandlerTest
     {
-        private TicksAscendingWithLeadingZeroPartitionKeyHandler _target;
+        private PartitionKeyHandler _target;
 
         [TestInitialize]
         public void Initialize()
         {
-            _target = new TicksAscendingWithLeadingZeroPartitionKeyHandler(new NullLogger<TicksAscendingWithLeadingZeroPartitionKeyHandler>());
+            _target = new TicksAscendingWithLeadingZeroPartitionKeyHandler(new NullLogger<PartitionKeyHandler>());
         }
 
         [TestMethod]

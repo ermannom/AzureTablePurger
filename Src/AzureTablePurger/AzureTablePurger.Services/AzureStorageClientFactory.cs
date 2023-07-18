@@ -1,7 +1,6 @@
-﻿using System.Collections.Concurrent;
-
-using Microsoft.Azure.Cosmos.Table;
+﻿using Azure.Data.Tables;
 using Microsoft.Extensions.Logging;
+using System.Collections.Concurrent;
 
 namespace AzureTablePurger.Services
 {
@@ -10,36 +9,35 @@ namespace AzureTablePurger.Services
     /// </summary>
     public class AzureStorageClientFactory : IAzureStorageClientFactory
     {
-        private static readonly ConcurrentDictionary<string, CloudTableClient> CloudTableClientCache = new ConcurrentDictionary<string, CloudTableClient>();
+        private static readonly ConcurrentDictionary<string, TableServiceClient> TableServiceClientCache = new ConcurrentDictionary<string, TableServiceClient>();
 
         private readonly ILogger<AzureStorageClientFactory> _logger;
-        
+
         public AzureStorageClientFactory(ILogger<AzureStorageClientFactory> logger)
         {
             _logger = logger;
         }
 
-        public CloudTableClient GetCloudTableClient(string connectionString)
+        public TableServiceClient GetTableServiceClient(string connectionString)
         {
-            if (CloudTableClientCache.ContainsKey(connectionString))
+            if (TableServiceClientCache.ContainsKey(connectionString))
             {
-                return CloudTableClientCache[connectionString];
+                return TableServiceClientCache[connectionString];
             }
 
-            _logger.LogDebug("CloudTableClient not found in cache. Creating new one and adding to cache");
+            _logger.LogDebug("TableServiceClient not found in cache. Creating new one and adding to cache");
 
-            var account = CloudStorageAccount.Parse(connectionString);
-            var newTableClient = account.CreateCloudTableClient();
+            var tableServiceClient = new TableServiceClient(connectionString);
 
-            bool resultOfAdd = CloudTableClientCache.TryAdd(connectionString, newTableClient);
+            bool resultOfAdd = TableServiceClientCache.TryAdd(connectionString, tableServiceClient);
 
             if (!resultOfAdd)
             {
-                _logger.LogDebug("Adding CloudTableClient to cache failed. Another thread must have beat us to it. Obtaining and returning the one in cache");
-                return CloudTableClientCache[connectionString];
+                _logger.LogDebug("Adding TableServiceClient to cache failed. Another thread must have beat us to it. Obtaining and returning the one in cache");
+                return TableServiceClientCache[connectionString];
             }
 
-            return newTableClient;
+            return tableServiceClient;
         }
     }
 }

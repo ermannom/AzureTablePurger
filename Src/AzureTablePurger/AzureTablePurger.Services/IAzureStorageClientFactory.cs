@@ -1,9 +1,9 @@
-﻿using Microsoft.Azure.Cosmos.Table;
+﻿using Azure.Data.Tables;
 
 namespace AzureTablePurger.Services
 {
     public interface IAzureStorageClientFactory
     {
-        CloudTableClient GetCloudTableClient(string connectionString);
+        TableServiceClient GetTableServiceClient(string connectionString);
     }
 }
